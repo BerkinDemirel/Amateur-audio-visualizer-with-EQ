@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WebGL2 Audio Visualizer - Computer Graphics Demo</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,sans-serif;background:#0a0a0a;color:#fff;overflow:hidden}
+#container{width:100vw;height:100vh;display:flex;flex-direction:column}
+#glCanvas{width:100%;flex:1;display:block;background:linear-gradient(135deg,#0a0a1e,#000)}
+#controls{background:rgba(20,20,40,.95);padding:15px;border-top:2px solid #4a4aff;max-height:42vh;overflow-y:auto}
+.row{display:flex;gap:15px;margin-bottom:10px;flex-wrap:wrap}
+.group{flex:1;min-width:180px}
+.group label{display:block;margin-bottom:5px;font-size:11px;color:#aaa;text-transform:uppercase}
+.slider{display:flex;align-items:center;gap:10px}
+input[type=range]{flex:1;height:4px;background:linear-gradient(to right,#4a4aff,#ff4a9f);outline:0;-webkit-appearance:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:#fff;cursor:pointer}
+input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:#fff;cursor:pointer;border:none}
+.val{min-width:35px;text-align:right;font-weight:700;color:#4a4aff;font-size:11px}
+select,button{padding:8px 12px;border:none;border-radius:4px;background:linear-gradient(135deg,#4a4aff,#ff4a9f);color:#fff;font-size:12px;cursor:pointer;transition:transform .2s}
+select{width:100%}
+button:hover{transform:scale(1.05)}
+#audioBtn{font-size:13px;padding:10px 20px;font-weight:700}
+.info{font-size:9px;color:#888;margin-top:8px;line-height:1.4;padding:8px;background:rgba(0,0,0,.3);border-radius:4px}
+.info strong{color:#4aff4a}
+#status{position:absolute;top:15px;left:15px;background:rgba(0,0,0,.85);padding:8px 12px;border-radius:4px;font-size:11px;color:#4aff4a;border:1px solid #4aff4a;z-index:10}
+.title{color:#4a4aff;font-size:12px;font-weight:700;margin:10px 0 6px;text-transform:uppercase;letter-spacing:1px}
+input[type=checkbox]{margin-right:5px}
+.chk{display:flex;align-items:center;cursor:pointer;margin-bottom:5px;font-size:11px;user-select:none}
+#fileInput{display:none}
+.file-label{display:inline-block;padding:8px 12px;background:linear-gradient(135deg,#ff4a9f,#4a4aff);border-radius:4px;cursor:pointer;font-size:12px;transition:transform .2s}
+.file-label:hover{transform:scale(1.05)}
+#trackTitle{position:absolute;top:60px;left:20px;right:20px;color:#fff;font-size:16px;text-shadow:2px 2px 4px rgba(0,0,0,.8);text-align:center;z-index:10}
+</style>
+</head>
+<body>
+<div id="container">
+<canvas id="glCanvas"></canvas>
+<div id="status">▶ Klik "Start Audio"</div>
+<div id="trackTitle"></div>
+<div id="controls">
+<div class="row">
+<div class="group"><button id="audioBtn">▶ Start Audio</button></div>
+<div class="group"><label class="file-label" for="fileInput"> Upload MP3/Audio</label><input type="file" id="fileInput" accept="audio/*"></div>
+<div class="group"><label>Visualisatie Mode</label><select id="mode"><option value="bars">3D Bars (Best voor Specular)</option><option value="spectrum">3D Spectrum Lines</option><option value="waveform">Waveform</option><option value="circular">Circular Spectrum</option><option value="particles">Particle Cloud</option><option value="sphere">Audio Sphere</option></select></div>
+</div>
+<div class="title"> Audio Equalizer</div>
+<div class="row">
+<div class="group"><label>Bass (20-200Hz)</label><div class="slider"><input type="range" id="bass" min="0" max="200" value="100"><span class="val" id="bassV">100%</span></div></div>
+<div class="group"><label>Mid (200Hz-3kHz)</label><div class="slider"><input type="range" id="mid" min="0" max="200" value="100"><span class="val" id="midV">100%</span></div></div>
+<div class="group"><label>Treble (3-20kHz)</label><div class="slider"><input type="range" id="treble" min="0" max="200" value="100"><span class="val" id="trebleV">100%</span></div></div>
+</div>
+<div class="title"> Phong Lighting Model</div>
+<div class="row">
+<div class="group"><label class="chk"><input type="checkbox" id="light" checked>Enable Phong Lighting</label></div>
+<div class="group"><label>Ambient + Diffuse</label><div class="slider"><input type="range" id="lightInt" min="0" max="200" value="100"><span class="val" id="lightIntV">100%</span></div></div>
+<div class="group"><label>Specular (Glans)</label><div class="slider"><input type="range" id="spec" min="0" max="200" value="80"><span class="val" id="specV">80%</span></div></div>
+</div>
+<div class="title"> Visual Effects</div>
+<div class="row">
+<div class="group"><label>FFT Smoothing</label><div class="slider"><input type="range" id="smooth" min="0" max="99" value="80"><span class="val" id="smoothV">80%</span></div></div>
+<div class="group"><label>Color Animation</label><div class="slider"><input type="range" id="colorSpd" min="0" max="100" value="30"><span class="val" id="colorSpdV">30%</span></div></div>
+<div class="group"><label>Camera Rotation</label><div class="slider"><input type="range" id="camSpd" min="0" max="100" value="20"><span class="val" id="camSpdV">20%</span></div></div>
+</div>
+<div class="row">
+<div class="group"><label class="chk"><input type="checkbox" id="bloom" checked>Bloom Post-Processing</label></div>
+<div class="group"><label class="chk"><input type="checkbox" id="autoRotate" checked>Auto Camera Rotate</label></div>
+</div>
+<div class="info"><strong>Computer Graphics Technieken:</strong><br>
+• <strong>Shaders:</strong> GLSL 300 ES Vertex & Fragment Shaders<br>
+• <strong>Lighting:</strong> Phong Lighting (Ambient + Diffuse + Specular componenten)<br>
+• <strong>Textures:</strong> Procedural Texture Generation (Perlin noise)<br>
+• <strong>Transformaties:</strong> 3D Perspective Projection & LookAt View Matrix<br>
+• <strong>Audio:</strong> Real-time FFT Analysis met Web Audio API<br>
+• <strong>Effects:</strong> Bloom Post-processing, Audio-reactive Animation<br>
+• <strong>Geometry:</strong> Dynamische Mesh Generation (Bars, Spheres, Particles)</div>
+</div>
+</div>
+<script>
+// ============================================================================
+// WebGL2 Setup & Initialisatie
+// ============================================================================
+const canvas=document.getElementById('glCanvas'),gl=canvas.getContext('webgl2');
+if(!gl){alert('WebGL2 niet ondersteund door deze browser!');throw new Error('No WebGL2');}
+
+// ============================================================================
+// GLSL Vertex Shader - 3D Transformaties & Audio Displacement
+// ============================================================================
+const vsSrc=`#version 300 es
+precision highp float;
+
+// Input vertex attributes
+in vec3 aPos;      // Vertex positie
+in vec3 aCol;      // Vertex kleur
+in vec3 aNorm;     // Normaal vector voor lighting
+in vec2 aTex;      // Texture coordinaten
+
+// Transformation matrices
+uniform mat4 uMV;      // Model-View matrix
+uniform mat4 uProj;    // Projection matrix
+uniform mat4 uNorm;    // Normal matrix
+
+// Animation parameters
+uniform float uTime;   // Tijd voor animatie
+uniform float uAmp;    // Audio amplitude
+
+// Output naar fragment shader
+out vec3 vCol;
+out vec3 vNorm;
+out vec3 vPos;
+out float vInt;
+out vec2 vTex;
+
+void main(){
+  // Audio-reactive vertex displacement (sinusoidal wave)
+  vec3 p=aPos;
+  p.y+=sin(p.x*3.+uTime*2.)*uAmp*.3;
+  
+  // Transform naar world space
+  vec4 wp=uMV*vec4(p,1.);
+  
+  // Transform naar clip space (final position)
+  gl_Position=uProj*wp;
+  
+  // Point size voor particle rendering
+  gl_PointSize=3.+uAmp*10.;
+  
+  // Pass data door naar fragment shader
+  vPos=wp.xyz;
+  vCol=aCol;
+  vInt=uAmp;
+  vTex=aTex;
+  vNorm=mat3(uNorm)*aNorm;  // Transform normaal met normal matrix
+}`;
+
+// ============================================================================
+// GLSL Fragment Shader - Phong Lighting & Procedural Textures
+// ============================================================================
+const fsSrc=`#version 300 es
+precision highp float;
+
+// Input van vertex shader
+in vec3 vCol;
+in vec3 vNorm;
+in vec3 vPos;
+in float vInt;
+in vec2 vTex;
+
+// Uniforms
+uniform float uTime;
+uniform bool uLight;
+uniform bool uBloom;
+uniform float uLightInt;
+uniform float uSpec;
+uniform vec3 uLightPos;
+uniform vec3 uViewPos;
+
+out vec4 fragColor;
+
+// ============================================================================
+// Procedural Texture Generation - Perlin-style noise
+// ============================================================================
+float hash(vec2 p){
+  return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);
+}
+
+float noise(vec2 p){
+  vec2 i=floor(p),f=fract(p);
+  f=f*f*(3.-2.*f);  // Smoothstep
+  return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),
+             mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);
+}
+
+vec3 procTex(vec2 uv){
+  float n=noise(uv*8.+uTime*.5)*.6+noise(uv*16.-uTime*.3)*.4;
+  return mix(vec3(.2,.4,.8),vec3(.8,.2,.6),n);
+}
+
+// ============================================================================
+// Phong Lighting Model Implementation
+// ============================================================================
+void main(){
+  vec3 col=mix(vCol,procTex(vTex),.4);
+  
+  if(uLight){
+    vec3 n=normalize(vNorm);
+    vec3 ld=normalize(uLightPos-vPos);
+    vec3 vd=normalize(uViewPos-vPos);
+    
+    // Ambient component (basis licht)
+    vec3 amb=.25*col*uLightInt;
+    
+    // Diffuse component (Lambertian reflectie)
+    float diff=max(dot(n,ld),0.);
+    vec3 dif=diff*col*uLightInt;
+    
+    // Specular component (Blinn-Phong voor highlights)
+    vec3 h=normalize(ld+vd);
+    float s=pow(max(dot(n,h),0.),64.);  // Hogere exponent = scherpere highlights
+    vec3 spc=uSpec*s*vec3(1.)*uLightInt*2.;  // Versterkte specular
+    
+    // Combineer alle lighting componenten
+    col=amb+dif+spc;
+  }
+  
+  // Audio-reactive intensity modulation
+  col*=vInt*.5+.5;
+  
+  // Color animation based op tijd
+  col+=vec3(sin(uTime*2.)*.15,cos(uTime*1.5)*.15,sin(uTime*2.5)*.15)*vInt;
+  
+  // Bloom effect voor hoge luminantie
+  if(uBloom&&dot(col,vec3(.2126,.7152,.0722))>.7)col*=1.5;
+  
+  fragColor=vec4(col,.95);
+}`;
+
+// ============================================================================
+// Shader Compilation & Linking
+// ============================================================================
+function compileShader(src,type){
+  const s=gl.createShader(type);
+  gl.shaderSource(s,src);
+  gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)){
+    console.error('Shader error:',gl.getShaderInfoLog(s));
+    throw new Error('Shader compilation failed');
+  }
+  return s;
+}
+
+const prog=gl.createProgram();
+gl.attachShader(prog,compileShader(vsSrc,gl.VERTEX_SHADER));
+gl.attachShader(prog,compileShader(fsSrc,gl.FRAGMENT_SHADER));
+gl.linkProgram(prog);
+if(!gl.getProgramParameter(prog,gl.LINK_STATUS)){
+  console.error('Program error:',gl.getProgramInfoLog(prog));
+  throw new Error('Program linking failed');
+}
+gl.useProgram(prog);
+
+// Get shader locations
+const loc={
+  aPos:gl.getAttribLocation(prog,'aPos'),
+  aCol:gl.getAttribLocation(prog,'aCol'),
+  aNorm:gl.getAttribLocation(prog,'aNorm'),
+  aTex:gl.getAttribLocation(prog,'aTex'),
+  uMV:gl.getUniformLocation(prog,'uMV'),
+  uProj:gl.getUniformLocation(prog,'uProj'),
+  uNorm:gl.getUniformLocation(prog,'uNorm'),
+  uTime:gl.getUniformLocation(prog,'uTime'),
+  uAmp:gl.getUniformLocation(prog,'uAmp'),
+  uLight:gl.getUniformLocation(prog,'uLight'),
+  uLightInt:gl.getUniformLocation(prog,'uLightInt'),
+  uSpec:gl.getUniformLocation(prog,'uSpec'),
+  uLightPos:gl.getUniformLocation(prog,'uLightPos'),
+  uViewPos:gl.getUniformLocation(prog,'uViewPos'),
+  uBloom:gl.getUniformLocation(prog,'uBloom')
+};
+
+// ============================================================================
+// Geometry Generation - Verschillende visualisatie modes
+// ============================================================================
+let verts=[],cols=[],norms=[],texs=[],indices=[],mode='bars';
+
+function createGeo(){
+  verts=[];cols=[];norms=[];texs=[];indices=[];
+  
+  if(mode==='bars'){
+    // 3D Bars met echte geometry voor betere lighting
+    for(let i=0;i<64;i++){
+      const x=(i/64)*4-2;
+      const w=.05;
+      const h=i/64;
+      
+      // Maak een 3D bar (box) met 6 faces - start op y=0
+      // Front face
+      verts.push(x-w,0,-w, x+w,0,-w, x+w,0,-w, x-w,0,-w);
+      norms.push(0,0,1, 0,0,1, 0,0,1, 0,0,1);
+      // Back face
+      verts.push(x-w,0,w, x-w,0,w, x+w,0,w, x+w,0,w);
+      norms.push(0,0,-1, 0,0,-1, 0,0,-1, 0,0,-1);
+      // Top face - deze wordt audio-reactief
+      verts.push(x-w,0,-w, x+w,0,-w, x+w,0,w, x-w,0,w);
+      norms.push(0,1,0, 0,1,0, 0,1,0, 0,1,0);
+      // Left face
+      verts.push(x-w,0,-w, x-w,0,-w, x-w,0,w, x-w,0,w);
+      norms.push(-1,0,0, -1,0,0, -1,0,0, -1,0,0);
+      // Right face
+      verts.push(x+w,0,-w, x+w,0,w, x+w,0,w, x+w,0,-w);
+      norms.push(1,0,0, 1,0,0, 1,0,0, 1,0,0);
+      
+      // Colors & texcoords voor alle vertices
+      for(let j=0;j<20;j++){
+        cols.push(Math.sin(h*Math.PI*2)*.5+.5,Math.sin(h*Math.PI*2+2.094)*.5+.5,Math.sin(h*Math.PI*2+4.189)*.5+.5);
+        texs.push(i/64,j/20);
+      }
+      
+      // Indices voor triangles
+      const base=i*20;
+      for(let f=0;f<5;f++){
+        const b=base+f*4;
+        indices.push(b,b+1,b+2, b,b+2,b+3);
+      }
+    }
+  }else if(mode==='spectrum'||mode==='waveform'){
+    // Spectrum lines
+    for(let i=0;i<128;i++){
+      const x=(i/128)*4-2;
+      verts.push(x,0,0);
+      const h=i/128;
+      cols.push(Math.sin(h*Math.PI*2)*.5+.5,Math.sin(h*Math.PI*2+2.094)*.5+.5,Math.sin(h*Math.PI*2+4.189)*.5+.5);
+      norms.push(0,1,0);
+      texs.push(i/128,0);
+    }
+  }else if(mode==='circular'){
+    // Circular spectrum
+    for(let i=0;i<128;i++){
+      const a=(i/128)*Math.PI*2;
+      verts.push(Math.cos(a)*1.5,0,Math.sin(a)*1.5);
+      cols.push(Math.abs(Math.cos(a)),Math.abs(Math.sin(a)),Math.abs(Math.sin(a*2)));
+      norms.push(Math.cos(a),0,Math.sin(a));
+      texs.push(i/128,0);
+    }
+  }else if(mode==='particles'){
+    // Particle cloud
+    for(let i=0;i<512;i++){
+      verts.push((Math.random()-.5)*4,(Math.random()-.5)*2,(Math.random()-.5)*4);
+      cols.push(Math.random(),Math.random(),Math.random());
+      norms.push(0,1,0);
+      texs.push(Math.random(),Math.random());
+    }
+  }else if(mode==='sphere'){
+    // Sphere met echte geometry
+    const lt=30,ln=30,r=1.5;
+    for(let i=0;i<=lt;i++){
+      const t=i*Math.PI/lt,st=Math.sin(t),ct=Math.cos(t);
+      for(let j=0;j<=ln;j++){
+        const p=j*2*Math.PI/ln,sp=Math.sin(p),cp=Math.cos(p);
+        const x=cp*st,y=ct,z=sp*st;
+        verts.push(r*x,r*y,r*z);
+        norms.push(x,y,z);  // Normaal wijst naar buiten
+        texs.push(j/ln,i/lt);
+        cols.push(x*.5+.5,y*.5+.5,z*.5+.5);
+      }
+    }
+    // Genereer indices voor triangle strips
+    for(let i=0;i<lt;i++){
+      for(let j=0;j<ln;j++){
+        const a=i*(ln+1)+j;
+        const b=a+ln+1;
+        indices.push(a,b,a+1, b,b+1,a+1);
+      }
+    }
+  }
+}
+createGeo();
+
+// ============================================================================
+// Buffer Setup
+// ============================================================================
+const pb=gl.createBuffer(),cb=gl.createBuffer(),nb=gl.createBuffer(),tb=gl.createBuffer(),ib=gl.createBuffer();
+
+function updateBuf(){
+  gl.bindBuffer(gl.ARRAY_BUFFER,pb);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(verts),gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(loc.aPos);
+  gl.vertexAttribPointer(loc.aPos,3,gl.FLOAT,false,0,0);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER,cb);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(cols),gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(loc.aCol);
+  gl.vertexAttribPointer(loc.aCol,3,gl.FLOAT,false,0,0);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER,nb);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(norms),gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(loc.aNorm);
+  gl.vertexAttribPointer(loc.aNorm,3,gl.FLOAT,false,0,0);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER,tb);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(texs),gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(loc.aTex);
+  gl.vertexAttribPointer(loc.aTex,2,gl.FLOAT,false,0,0);
+  
+  if(indices.length>0){
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ib);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint16Array(indices),gl.STATIC_DRAW);
+  }
+}
+updateBuf();
+
+// ============================================================================
+// Matrix Math - Perspective & LookAt
+// ============================================================================
+function persp(fov,asp,n,f){
+  const ff=1/Math.tan(fov/2),nf=1/(n-f);
+  return new Float32Array([ff/asp,0,0,0,0,ff,0,0,0,0,(f+n)*nf,-1,0,0,2*f*n*nf,0]);
+}
+
+function lookAt(e,c,u){
+  const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]];
+  const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+  const dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+  const norm=v=>{const l=Math.sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]);return l>0?[v[0]/l,v[1]/l,v[2]/l]:v;};
+  const z=norm(sub(e,c)),x=norm(cross(u,z)),y=cross(z,x);
+  return new Float32Array([x[0],y[0],z[0],0,x[1],y[1],z[1],0,x[2],y[2],z[2],0,-dot(x,e),-dot(y,e),-dot(z,e),1]);
+}
+
+function transp(m){
+  return new Float32Array([m[0],m[4],m[8],0,m[1],m[5],m[9],0,m[2],m[6],m[10],0,0,0,0,1]);
+}
+
+// ============================================================================
+// Web Audio API Setup
+// ============================================================================
+let actx,ana,data,bufLen,osc,osc2,gain,bass,mid,treb,playing=false,audioStarted=false,audioSrc=null;
+
+function initAudio(){
+  actx=new(window.AudioContext||window.webkitAudioContext)();
+  ana=actx.createAnalyser();
+  ana.fftSize=512;
+  bufLen=ana.frequencyBinCount;
+  data=new Uint8Array(bufLen);
+
+  // EQ Filters
+  bass=actx.createBiquadFilter();
+  bass.type='lowshelf';
+  bass.frequency.value=200;
+  bass.gain.value=0;
+
+  mid=actx.createBiquadFilter();
+  mid.type='peaking';
+  mid.frequency.value=1000;
+  mid.Q.value=1;
+  mid.gain.value=0;
+
+  treb=actx.createBiquadFilter();
+  treb.type='highshelf';
+  treb.frequency.value=3000;
+  treb.gain.value=0;
+
+  gain=actx.createGain();
+  gain.gain.value=.3;
+}
+
+function startDefaultAudio(){
+  if(!actx)initAudio();
+
+  osc=actx.createOscillator();
+  osc.type='triangle';
+  osc.frequency.value=220;
+
+  osc.connect(bass).connect(mid).connect(treb).connect(gain).connect(ana);
+  ana.connect(actx.destination);
+
+  osc2=actx.createOscillator();
+  osc2.type='sine';
+  osc2.frequency.value=440;
+  const g2=actx.createGain();
+  g2.gain.value=.15;
+  osc2.connect(g2).connect(bass);
+
+  osc.start();
+  osc2.start();
+
+  setInterval(()=>{
+    if(osc&&playing){
+      osc.frequency.value=110+Math.random()*330;
+      osc2.frequency.value=220+Math.random()*440;
+    }
+  },1500);
+}
+
+function loadAudioFile(file){
+  if(!actx)initAudio();
+
+  const reader=new FileReader();
+  reader.onload=function(e){
+    actx.decodeAudioData(e.target.result,function(buffer){
+      if(audioSrc){audioSrc.stop();audioSrc.disconnect();}
+      if(osc){osc.stop();osc=null;}
+      if(osc2){osc2.stop();osc2=null;}
+
+      audioSrc=actx.createBufferSource();
+      audioSrc.buffer=buffer;
+      audioSrc.loop=true;
+
+      audioSrc.connect(bass).connect(mid).connect(treb).connect(gain).connect(ana);
+      ana.connect(actx.destination);
+
+      audioSrc.start(0);
+      playing=true;
+      audioStarted=true;
+
+      document.getElementById('trackTitle').textContent='🎵 '+file.name;
+      document.getElementById('status').textContent='🎵 Playing: '+file.name;
+      document.getElementById('audioBtn').textContent='⏸ Pause';
+    });
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// ============================================================================
+// Configuration
+// ============================================================================
+const cfg={smooth:.8,colSpd:.3,camSpd:.2,light:true,lightInt:1,spec:.8,bloom:true,autoRotate:true};
+
+// ============================================================================
+// Canvas Resize Handler
+// ============================================================================
+function resize(){
+  canvas.width=canvas.clientWidth;
+  canvas.height=canvas.clientHeight;
+  gl.viewport(0,0,canvas.width,canvas.height);
+}
+window.addEventListener('resize',resize);
+resize();
+
+// ============================================================================
+// Render Loop
+// ============================================================================
+const t0=Date.now();
+let avgAmp=0;
+
+function render(){
+  const t=(Date.now()-t0)*.001*cfg.colSpd;
+  
+  gl.clearColor(.05,.05,.1,1);
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA,gl.ONE);
+  gl.enable(gl.DEPTH_TEST);
+
+  // Audio data processing
+  if(ana&&playing){
+    ana.smoothingTimeConstant=cfg.smooth;
+    ana.getByteFrequencyData(data);
+
+    if(mode==='bars'){
+      // Elke bar volgt zijn eigen frequentie band
+      for(let i=0;i<64;i++){
+        const freqIndex=Math.floor((i/64)*bufLen);
+        const height=(data[freqIndex]/255)*2;  // Individuele hoogte per bar
+        const base=i*20;
+        // Update alleen de top vertices
+        // Front face top (indices 2,3)
+        verts[(base+2)*3+1]=height;
+        verts[(base+3)*3+1]=height;
+        // Back face top (indices 5,6)
+        verts[(base+5)*3+1]=height;
+        verts[(base+6)*3+1]=height;
+        // Top face (indices 8-11)
+        verts[(base+8)*3+1]=height;
+        verts[(base+9)*3+1]=height;
+        verts[(base+10)*3+1]=height;
+        verts[(base+11)*3+1]=height;
+        // Left face top (indices 13,14)
+        verts[(base+13)*3+1]=height;
+        verts[(base+14)*3+1]=height;
+        // Right face top (indices 18,19)
+        verts[(base+18)*3+1]=height;
+        verts[(base+19)*3+1]=height;
+      }
+    }else if(mode==='spectrum'){
+      for(let i=0;i<128;i++)verts[i*3+1]=data[i]/255*2;
+    }else if(mode==='waveform'){
+      const wave=new Uint8Array(bufLen);
+      ana.getByteTimeDomainData(wave);
+      for(let i=0;i<128;i++)verts[i*3+1]=(wave[i]/128-1)*1.5;
+    }else if(mode==='circular'){
+      for(let i=0;i<128;i++){
+        const v=data[i]/255,a=(i/128)*Math.PI*2,r=1.5+v*1.5;
+        verts[i*3]=Math.cos(a)*r;
+        verts[i*3+2]=Math.sin(a)*r;
+        verts[i*3+1]=v*.5;
+      }
+    }else if(mode==='particles'){
+      for(let i=0;i<512;i++){
+        const f=Math.floor((i/512)*bufLen),v=data[f]/255;
+        verts[i*3+1]+=(v-.5)*.02;
+        verts[i*3+1]*=.98;
+      }
+    }
+
+    gl.bindBuffer(gl.ARRAY_BUFFER,pb);
+    gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(verts),gl.DYNAMIC_DRAW);
+
+    let sum=0;
+    for(let i=0;i<bufLen;i++)sum+=data[i];
+    avgAmp=avgAmp*.9+(sum/bufLen/255)*.1;
+  }
+
+  // Camera setup
+  const ca=(cfg.autoRotate?t*cfg.camSpd:0),cd=3+Math.sin(t*.5)*.5;
+  const eye=[Math.sin(ca)*cd,1.5+Math.sin(t*.3)*.3,Math.cos(ca)*cd];
+  const proj=persp(Math.PI/4,canvas.width/canvas.height,.1,100);
+  const mv=lookAt(eye,[0,.5,0],[0,1,0]);
+
+  // Set uniforms
+  gl.uniformMatrix4fv(loc.uProj,false,proj);
+  gl.uniformMatrix4fv(loc.uMV,false,mv);
+  gl.uniformMatrix4fv(loc.uNorm,false,transp(mv));
+  gl.uniform1f(loc.uTime,t);
+  gl.uniform1f(loc.uAmp,avgAmp);
+  gl.uniform1i(loc.uLight,cfg.light);
+  gl.uniform1f(loc.uLightInt,cfg.lightInt);
+  gl.uniform1f(loc.uSpec,cfg.spec);
+  gl.uniform3f(loc.uLightPos,3,3,3);
+  gl.uniform3f(loc.uViewPos,eye[0],eye[1],eye[2]);
+  gl.uniform1i(loc.uBloom,cfg.bloom);
+
+  // Draw
+  if(mode==='bars'&&indices.length>0){
+    gl.drawElements(gl.TRIANGLES,indices.length,gl.UNSIGNED_SHORT,0);
+  }else if(mode==='sphere'&&indices.length>0){
+    gl.drawElements(gl.TRIANGLES,indices.length,gl.UNSIGNED_SHORT,0);
+  }else if(mode==='particles'){
+    gl.drawArrays(gl.POINTS,0,512);
+  }else{
+    gl.drawArrays(gl.LINE_STRIP,0,128);
+    gl.drawArrays(gl.POINTS,0,128);
+  }
+
+  requestAnimationFrame(render);
+}
+render();
+
+// ============================================================================
+// UI Event Handlers
+// ============================================================================
+document.getElementById('audioBtn').onclick=function(){
+  if(!audioStarted){
+    startDefaultAudio();
+    audioStarted=true;
+    playing=true;
+    this.textContent='⏸ Pause';
+    document.getElementById('status').textContent=' ▶ Audio Actief';
+  }else{
+    playing=!playing;
+    gain.gain.value=playing?.3:0;
+    this.textContent=playing?'⏸ Pause':'▶ Resume';
+    document.getElementById('status').textContent=playing?' ▶ Audio Actief':'⏸ Gepauzeerd';
+  }
+};
+
+document.getElementById('fileInput').onchange=function(e){
+  const file=e.target.files[0];
+  if(file)loadAudioFile(file);
+};
+
+document.getElementById('mode').onchange=e=>{mode=e.target.value;createGeo();updateBuf();};
+document.getElementById('bass').oninput=e=>{if(bass)bass.gain.value=(e.target.value-100)*.3;document.getElementById('bassV').textContent=e.target.value+'%';};
+document.getElementById('mid').oninput=e=>{if(mid)mid.gain.value=(e.target.value-100)*.3;document.getElementById('midV').textContent=e.target.value+'%';};
+document.getElementById('treble').oninput=e=>{if(treb)treb.gain.value=(e.target.value-100)*.3;document.getElementById('trebleV').textContent=e.target.value+'%';};
+document.getElementById('smooth').oninput=e=>{cfg.smooth=e.target.value/100;document.getElementById('smoothV').textContent=e.target.value+'%';};
+document.getElementById('colorSpd').oninput=e=>{cfg.colSpd=e.target.value/100;document.getElementById('colorSpdV').textContent=e.target.value+'%';};
+document.getElementById('camSpd').oninput=e=>{cfg.camSpd=e.target.value/100;document.getElementById('camSpdV').textContent=e.target.value+'%';};
+document.getElementById('light').onchange=e=>{cfg.light=e.target.checked;};
+document.getElementById('lightInt').oninput=e=>{cfg.lightInt=e.target.value/100;document.getElementById('lightIntV').textContent=e.target.value+'%';};
+document.getElementById('spec').oninput=e=>{cfg.spec=e.target.value/100;document.getElementById('specV').textContent=e.target.value+'%';};
+document.getElementById('bloom').onchange=e=>{cfg.bloom=e.target.checked;};
+document.getElementById('autoRotate').onchange=e=>{cfg.autoRotate=e.target.checked;};
+
+document.getElementById('status').textContent=' Gereed - Klik Start Audio';
+</script>
+</body>
+</html>
